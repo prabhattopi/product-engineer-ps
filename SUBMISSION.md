@@ -6,7 +6,7 @@
 - **Email:** topi9864@gmail.com
 - **GitHub:** https://github.com/prabhattopi (or fork URL: `https://github.com/prabhattopi/product-engineer-ps`)
 - **Selected problem:** Problem 3: Reconnecting Real-Time Feed (`problems/03-reconnecting-realtime-feed`)
-- **Demo video:** [Link to 3–5 min Demo Video - Loom / YouTube] *(Replace with your recorded video URL)*
+- **Demo video:** https://drive.google.com/file/d/1W4ly589_N63CaB_aofjatu3SkzjIABZR/view?usp=sharing
 
 ---
 

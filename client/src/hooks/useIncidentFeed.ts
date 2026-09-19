@@ -30,6 +30,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
   const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
   const [nextRetryInMs, setNextRetryInMs] = useState<number>(0);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [pendingOutboxCount, setPendingOutboxCount] = useState<number>(0);
 
   const socketRef = useRef<WebSocket | null>(null);
   const roomIdRef = useRef<string>(roomId);
@@ -38,6 +39,22 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasConnectedOnceRef = useRef<boolean>(false);
+  const outboxRef = useRef<Map<string, ClientMessage>>(new Map());
+
+  // Helper to re-transmit unacknowledged outbox messages after reconnecting
+  const flushOutbox = useCallback((socket: WebSocket) => {
+    if (outboxRef.current.size === 0 || socket.readyState !== WebSocket.OPEN) return;
+    const currentRoom = roomIdRef.current;
+    outboxRef.current.forEach((pendingMsg) => {
+      if (pendingMsg.type === 'PUBLISH' && pendingMsg.roomId === currentRoom) {
+        try {
+          socket.send(JSON.stringify(pendingMsg));
+        } catch (e) {
+          console.error('[FeedHook] Error re-sending outbox message:', e);
+        }
+      }
+    });
+  }, []);
 
   // Keep refs in sync
   useEffect(() => {
@@ -102,12 +119,22 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
 
             case 'REPLAY': {
               // Only process replay messages for our active room
-              if (data.roomId === roomIdRef.current && data.messages.length > 0) {
-                const isReconnection = hasConnectedOnceRef.current;
-                setFeedState((prev) => {
-                  const { state } = ingestReplayBatch(prev, data.messages, isReconnection);
-                  return state;
-                });
+              if (data.roomId === roomIdRef.current) {
+                if (data.messages.length > 0) {
+                  // Acknowledge any in-flight outbox items present in the replay
+                  for (const msg of data.messages) {
+                    outboxRef.current.delete(msg.id);
+                  }
+                  setPendingOutboxCount(outboxRef.current.size);
+
+                  const isReconnection = hasConnectedOnceRef.current;
+                  setFeedState((prev) => {
+                    const { state } = ingestReplayBatch(prev, data.messages, isReconnection);
+                    return state;
+                  });
+                }
+                // Flush any remaining unacknowledged messages (Scenario B: dropped in-flight)
+                flushOutbox(socket);
               }
               hasConnectedOnceRef.current = true;
               break;
@@ -117,6 +144,8 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
               if (data.roomId === roomIdRef.current) {
                 setFeedState(createInitialFeedStore());
                 highestSequenceRef.current = 0;
+                outboxRef.current.clear();
+                setPendingOutboxCount(0);
               }
               break;
             }
@@ -124,6 +153,10 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
             case 'BROADCAST': {
               // Live update (AC1) + deduplication (AC4) + monotonic ordering (AC5)
               if (data.roomId === roomIdRef.current) {
+                if (outboxRef.current.has(data.message.id)) {
+                  outboxRef.current.delete(data.message.id);
+                  setPendingOutboxCount(outboxRef.current.size);
+                }
                 setFeedState((prev) => {
                   const { state } = ingestMessage(prev, data.message);
                   return state;
@@ -143,6 +176,11 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
               if (data.latestSequence < highestSequenceRef.current) {
                 setFeedState(createInitialFeedStore());
                 highestSequenceRef.current = data.latestSequence;
+                outboxRef.current.clear();
+                setPendingOutboxCount(0);
+              } else {
+                // If feed was already up to date and no REPLAY was sent, flush any pending outbox items
+                flushOutbox(socket);
               }
               break;
             }
@@ -241,7 +279,16 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
         severity,
         clientMessageId,
       };
-      socketRef.current.send(JSON.stringify(payload));
+
+      // Add to unacknowledged outbox queue until confirmed via BROADCAST or REPLAY
+      outboxRef.current.set(clientMessageId, payload);
+      setPendingOutboxCount(outboxRef.current.size);
+
+      try {
+        socketRef.current.send(JSON.stringify(payload));
+      } catch (err: any) {
+        console.warn('[FeedHook] Immediate send error; retained in outbox for retry:', err);
+      }
     },
     []
   );
@@ -337,6 +384,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     reconnectAttempts: reconnectAttempt,
     missedCaughtUpCount: feedState.missedCaughtUpCount,
     initialHistoryCount: feedState.initialHistoryCount,
+    pendingOutboxCount,
   };
 
   return {

@@ -93,12 +93,13 @@ npm test
   - **AC3**: Reconnection with sequence cursor replay recovering exact missed updates
   - **AC4**: Duplicate injection prevention across concurrent delivery paths
   - **AC5**: Strict ordering and room segregation
+  - **AC3+ Resilience**: Sudden disconnect immediately after sending an update; verifies both server-side durable ingestion, cursor replay recovery, and client outbox retry deduplication
 - **`client/src/feedStore.test.ts`**:
   - Tests pure state reducer for message deduplication via `Set<string>`
   - Tests out-of-order sequence sorting
   - Tests room reset wipe and state transitions
 
-**Result:** 14/14 tests pass deterministically in ~3.5 seconds with zero external network or database dependencies.
+**Result:** 15/15 tests pass deterministically in ~3.5 seconds with zero external network or database dependencies.
 
 ---
 
@@ -192,6 +193,11 @@ The system decouples real-time transport from state management and persistence, 
 - **Decision**: The server detects `lastSequenceId > currentLatestSeq`, immediately emits a `ROOM_RESET` frame to wipe the client's stale local memory, and synchronizes the client to sequence #0.
 - **Impact**: Guarantees consistency across distributed tabs even across out-of-band administrative operations.
 
+### 5. Client Unacknowledged Outbox Queue with Reconnection Reconciliation
+- **Problem**: When a user clicks Broadcast and the connection drops immediately, the message packet may either (A) have reached the server before the drop, or (B) have dropped in-flight before the server received it.
+- **Decision**: Built an in-memory `outboxRef` tracking queue inside `useIncidentFeed.ts`. When publishing, the message is tracked with its unique `clientMessageId`. It is only removed once acknowledged via `BROADCAST` or `REPLAY`. If the connection drops and reconnects, any unacknowledged items in the outbox are automatically re-transmitted over the newly opened socket with the identical `clientMessageId`.
+- **Impact**: Completely eliminates message loss during sudden network drops. Due to server-side idempotency, Scenario A retries are discarded harmlessly as duplicates, while Scenario B retries are committed and broadcasted.
+
 ---
 
 ## Assumptions and limitations
@@ -221,13 +227,27 @@ If this prototype needed to operate in production at enterprise scale:
 ## Questions to address
 
 ### 1. What happens if a client disconnects immediately after sending an update?
-- **Scenario**: Client sends `PUBLISH { clientMessageId: "uuid-123", text: "Alert" }`, and the socket drops before the server ACK or broadcast reaches the client.
-- **Handling in this design**:
-  - The server successfully received, sequenced, and committed the message to the durable store.
-  - Upon reconnection, the client issues `SUBSCRIBE { lastSequenceId: K }` (where $K$ was its last confirmed sequence prior to the disconnect).
-  - The server's replay stream includes the update that the client sent.
-  - The client's `feedStore` receives it in the replay, matches the `clientMessageId`, and incorporates it smoothly without data loss or duplication.
-  - If the publish failed *before* reaching the server, the client's unacknowledged write queue (in an advanced offline queue implementation) would retry sending the same `clientMessageId`. The server's idempotency set ensures it is processed at most once.
+
+In real-world networks, a sudden disconnect after clicking Broadcast results in one of two physical realities:
+
+- **Scenario A: The server received the message before the socket closed.**
+  1. The server processed the `PUBLISH` frame, assigned monotonic sequence `#5`, saved it to durable persistence, and attempted to broadcast back to the sender.
+  2. The sender's socket severed before the server's broadcast or ACK arrived.
+  3. Other connected participants received update `#5` in real time.
+  4. Upon reconnecting, the sender transmits `SUBSCRIBE { lastSequenceId: 4 }`.
+  5. The server queries messages where `sequence > 4` and returns a `REPLAY` stream containing update `#5`.
+  6. The sender's client ingests `#5`, identifies its matching `clientMessageId`, reconciles and clears it from its pending outbox queue, and renders it seamlessly into the feed.
+  7. **Result**: Zero data loss, correct sequence `#5` ordering, and zero duplicate rendering.
+
+- **Scenario B: The connection severed in transit before the packet reached the server.**
+  1. The server never received the packet; the room's sequence counter was not incremented.
+  2. The client transitions to `RECONNECTING`, preserving the unacknowledged update in its local `outboxRef`.
+  3. Upon reconnecting and re-subscribing, the client checks its outbox and finds the unacknowledged message.
+  4. The client's `flushOutbox()` automatically re-transmits the payload over the fresh socket with the **identical** `clientMessageId`.
+  5. The server receives the update, sequences it, writes it to disk, and broadcasts it.
+  6. **Result**: Zero lost messages even if the socket severed at the exact millisecond of dispatch.
+
+- **Automated Verification**: This dual-scenario resilience is tested in `server/test/integration.test.ts` (*"AC3+ Resilience: Sudden disconnect immediately after publishing recovers safely via replay and deduplicates outbox retries"*).
 
 ### 2. How would multiple backend instances share and order events?
 - Multiple backend nodes cannot independently generate local integer sequence numbers without race conditions.

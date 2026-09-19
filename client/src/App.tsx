@@ -363,6 +363,12 @@ export default function App() {
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/50">
                 {roomId}
               </span>
+              {Boolean(stats.pendingOutboxCount && stats.pendingOutboxCount > 0) && (
+                <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-600/40 text-[10px] text-amber-300 animate-pulse font-mono flex items-center gap-1">
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                  In-flight outbox: {stats.pendingOutboxCount}
+                </span>
+              )}
             </div>
             <span className="text-[11px] text-slate-500 font-mono">
               Deterministic sequence sorting active

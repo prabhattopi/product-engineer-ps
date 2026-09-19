@@ -280,4 +280,79 @@ describe('Real-Time Feed Integration Tests (AC1 - AC5)', () => {
     clientAlpha.close();
     clientBravo.close();
   });
+
+  it('AC3+ Resilience: Sudden disconnect immediately after publishing recovers safely via replay and deduplicates outbox retries', async () => {
+    const roomId = 'incident-sudden-disconnect-test';
+    const client = await connectClient();
+
+    // Subscribe
+    client.send(JSON.stringify({ type: 'SUBSCRIBE', roomId, lastSequenceId: 0 } as ClientMessage));
+    await waitForMessage(client, (m) => m.type === 'SUBSCRIBED');
+
+    const inFlightMessageId = 'in-flight-client-id-xyz';
+
+    // 1. Client publishes message
+    client.send(
+      JSON.stringify({
+        type: 'PUBLISH',
+        roomId,
+        content: 'Server room power failure detected',
+        author: 'Ops Lead',
+        severity: 'CRITICAL',
+        clientMessageId: inFlightMessageId,
+      } as ClientMessage)
+    );
+
+    // 2. Client immediately drops connection (simulating sudden network loss before ACK/broadcast arrives)
+    client.terminate();
+
+    // Give server a brief tick to process the in-flight packet
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify message was safely committed to the server's durable log with sequence 1
+    expect(defaultStore.getLatestSequence(roomId)).toBe(1);
+    const stored = defaultStore.getAllMessages(roomId);
+    expect(stored.length).toBe(1);
+    expect(stored[0].id).toBe(inFlightMessageId);
+
+    // 3. Client reconnects with lastSequenceId: 0 (prior to the disconnect)
+    const reconnectedClient = await connectClient();
+    reconnectedClient.send(
+      JSON.stringify({
+        type: 'SUBSCRIBE',
+        roomId,
+        lastSequenceId: 0,
+      } as ClientMessage)
+    );
+
+    // 4. Client recovers the message via REPLAY
+    const replayMsg = (await waitForMessage(
+      reconnectedClient,
+      (m) => m.type === 'REPLAY' && m.messages.length > 0
+    )) as any;
+
+    expect(replayMsg.messages.length).toBe(1);
+    expect(replayMsg.messages[0].id).toBe(inFlightMessageId);
+    expect(replayMsg.messages[0].sequence).toBe(1);
+
+    // 5. Client's outbox flushes the message again just in case (retry with same clientMessageId)
+    reconnectedClient.send(
+      JSON.stringify({
+        type: 'PUBLISH',
+        roomId,
+        content: 'Server room power failure detected',
+        author: 'Ops Lead',
+        severity: 'CRITICAL',
+        clientMessageId: inFlightMessageId,
+      } as ClientMessage)
+    );
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 6. Server deduplicates: latestSequence remains 1, total count remains 1
+    expect(defaultStore.getLatestSequence(roomId)).toBe(1);
+    expect(defaultStore.getAllMessages(roomId).length).toBe(1);
+
+    reconnectedClient.close();
+  });
 });

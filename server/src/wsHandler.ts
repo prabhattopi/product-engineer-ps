@@ -122,8 +122,24 @@ export class WebSocketHandler {
         const currentLatestSeq = this.store.getLatestSequence(roomId);
         const lastSequenceId = typeof parsed.lastSequenceId === 'number' ? parsed.lastSequenceId : 0;
 
-        // Catch-up / Missed updates recovery (AC3)
-        if (currentLatestSeq > lastSequenceId) {
+        // If client sequence is ahead of server, the room was reset while the client was disconnected!
+        if (lastSequenceId > currentLatestSeq) {
+          this.send(session.ws, {
+            type: 'ROOM_RESET',
+            roomId,
+          });
+          if (currentLatestSeq > 0) {
+            const allMessages = this.store.getAllMessages(roomId);
+            this.send(session.ws, {
+              type: 'REPLAY',
+              roomId,
+              messages: allMessages,
+              fromSeq: 0,
+              toSeq: currentLatestSeq,
+            });
+          }
+        } else if (currentLatestSeq > lastSequenceId) {
+          // Catch-up / Missed updates recovery (AC3)
           const missedMessages = this.store.getMessagesAfter(roomId, lastSequenceId);
           this.send(session.ws, {
             type: 'REPLAY',

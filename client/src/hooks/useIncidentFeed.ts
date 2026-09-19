@@ -134,6 +134,11 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
 
             case 'SUBSCRIBED': {
               hasConnectedOnceRef.current = true;
+              // If server reports a sequence smaller than local state, the room was reset while offline
+              if (data.latestSequence < highestSequenceRef.current) {
+                setFeedState(createInitialFeedStore());
+                highestSequenceRef.current = data.latestSequence;
+              }
               break;
             }
             case 'WELCOME':

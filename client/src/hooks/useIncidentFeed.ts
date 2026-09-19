@@ -215,47 +215,35 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     };
   }, [connect, clearTimers]);
 
-  // Publish a new update
+  // Publish a new update (only over active WebSocket channel)
   const publishUpdate = useCallback(
     async (content: string, severity: MessageSeverity = 'INFO', author = 'Current User') => {
       if (!content.trim()) return;
 
       const currentRoom = roomIdRef.current;
-      const clientMessageId = crypto.randomUUID();
 
-      // If socket is open, send via WebSocket
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        const payload: ClientMessage = {
-          type: 'PUBLISH',
-          roomId: currentRoom,
-          content: content.trim(),
-          author,
-          severity,
-          clientMessageId,
-        };
-        socketRef.current.send(JSON.stringify(payload));
-      } else {
-        // Fallback: send via REST API if disconnected
-        try {
-          const res = await fetch(`${apiUrl}/rooms/${currentRoom}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: content.trim(),
-              author,
-              severity,
-              clientMessageId,
-            }),
-          });
-          if (!res.ok) {
-            throw new Error(`HTTP error ${res.status}`);
-          }
-        } catch (err: any) {
-          setErrorNotice(`Failed to publish update: ${err.message}`);
-        }
+      // Refuse to publish if offline, simulated offline, or socket is not open
+      if (
+        isSimulatedOfflineRef.current ||
+        !socketRef.current ||
+        socketRef.current.readyState !== WebSocket.OPEN
+      ) {
+        setErrorNotice('Cannot broadcast update: Client is disconnected. Please reconnect first.');
+        return;
       }
+
+      const clientMessageId = crypto.randomUUID();
+      const payload: ClientMessage = {
+        type: 'PUBLISH',
+        roomId: currentRoom,
+        content: content.trim(),
+        author,
+        severity,
+        clientMessageId,
+      };
+      socketRef.current.send(JSON.stringify(payload));
     },
-    [apiUrl]
+    []
   );
 
   // Simulate network disconnect (for testing and demo video)

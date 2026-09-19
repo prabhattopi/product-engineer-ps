@@ -18,6 +18,7 @@ export interface FeedStats {
   duplicatesFiltered: number;
   reconnectAttempts: number;
   missedCaughtUpCount: number;
+  totalMissedCaughtUpCount?: number;
   initialHistoryCount: number;
   pendingOutboxCount?: number;
   lastConnectedAt?: string;

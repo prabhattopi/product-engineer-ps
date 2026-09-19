@@ -76,14 +76,15 @@ export default function App() {
   }, [toastMessage]);
 
   // When missed updates are caught up on reconnect (AC3), notify user with feedback banner
-  const prevMissedRef = useRef(stats.missedCaughtUpCount);
+  const prevTotalMissedRef = useRef(stats.totalMissedCaughtUpCount || 0);
   useEffect(() => {
-    if (stats.missedCaughtUpCount > prevMissedRef.current) {
-      const recovered = stats.missedCaughtUpCount - prevMissedRef.current;
+    const currentTotal = stats.totalMissedCaughtUpCount || 0;
+    if (currentTotal > prevTotalMissedRef.current) {
+      const recovered = stats.missedCaughtUpCount;
       setToastMessage(`AC3 Verified: Recovered ${recovered} missed update${recovered > 1 ? 's' : ''} via sequence replay!`);
     }
-    prevMissedRef.current = stats.missedCaughtUpCount;
-  }, [stats.missedCaughtUpCount]);
+    prevTotalMissedRef.current = currentTotal;
+  }, [stats.totalMissedCaughtUpCount, stats.missedCaughtUpCount]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -345,7 +346,14 @@ export default function App() {
             <div className="text-lg font-mono font-bold text-purple-300">
               {stats.missedCaughtUpCount > 0 ? `+${stats.missedCaughtUpCount}` : '0'}
             </div>
-            <p className="text-[10px] text-slate-500">Recovered on reconnect (AC3)</p>
+            <p className="text-[10px] text-slate-500">
+              {Boolean(
+                stats.totalMissedCaughtUpCount &&
+                  stats.totalMissedCaughtUpCount > stats.missedCaughtUpCount
+              )
+                ? `This reconnect (+${stats.totalMissedCaughtUpCount} total)`
+                : 'Recovered on reconnect (AC3)'}
+            </p>
           </div>
         </div>
       </div>

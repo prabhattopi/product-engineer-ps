@@ -5,7 +5,8 @@ export interface FeedStoreState {
   seenIds: Set<string>;
   highestSequence: number;
   duplicatesFiltered: number;
-  missedCaughtUpCount: number;
+  missedCaughtUpCount: number; // Missed updates recovered in the latest reconnect event
+  totalMissedCaughtUpCount: number; // Cumulative total missed updates recovered across all reconnects
   initialHistoryCount: number;
   hasInitialLoaded: boolean;
 }
@@ -17,6 +18,7 @@ export function createInitialFeedStore(): FeedStoreState {
     highestSequence: 0,
     duplicatesFiltered: 0,
     missedCaughtUpCount: 0,
+    totalMissedCaughtUpCount: 0,
     initialHistoryCount: 0,
     hasInitialLoaded: false,
   };
@@ -100,10 +102,15 @@ export function ingestReplayBatch(
   const combined = [...state.messages, ...toAdd].sort((a, b) => a.sequence - b.sequence);
   const maxSeq = combined.reduce((acc, m) => Math.max(acc, m.sequence), state.highestSequence);
 
-  // If this batch arrived during a reconnection, ALL newly added messages are missed updates (AC3)!
+  // If this batch arrived during a reconnection:
+  // missedCaughtUpCount = added in this reconnect event (AC3)
+  // totalMissedCaughtUpCount = accumulated all-time
   const newMissedCaughtUp = isReconnection
-    ? state.missedCaughtUpCount + added
+    ? added
     : state.missedCaughtUpCount;
+  const newTotalMissed = isReconnection
+    ? (state.totalMissedCaughtUpCount || 0) + added
+    : (state.totalMissedCaughtUpCount || 0);
   const newInitialHistory = !isReconnection
     ? state.initialHistoryCount + added
     : state.initialHistoryCount;
@@ -116,6 +123,7 @@ export function ingestReplayBatch(
       highestSequence: maxSeq,
       duplicatesFiltered: state.duplicatesFiltered + dupes,
       missedCaughtUpCount: newMissedCaughtUp,
+      totalMissedCaughtUpCount: newTotalMissed,
       initialHistoryCount: newInitialHistory,
       hasInitialLoaded: true,
     },

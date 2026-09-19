@@ -405,6 +405,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     duplicatesFiltered: feedState.duplicatesFiltered,
     reconnectAttempts: reconnectAttempt,
     missedCaughtUpCount: feedState.missedCaughtUpCount,
+    totalMissedCaughtUpCount: feedState.totalMissedCaughtUpCount,
     initialHistoryCount: feedState.initialHistoryCount,
     pendingOutboxCount,
   };

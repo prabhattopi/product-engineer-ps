@@ -88,13 +88,14 @@ describe('Client FeedStore (Deduplication & Monotonic Ordering)', () => {
       createMsg('msg-4', 4, 'Message 4'), // NEW
     ];
 
-    const replayResult = ingestReplayBatch(store, replayBatch);
+    const replayResult = ingestReplayBatch(store, replayBatch, true);
 
     expect(replayResult.addedCount).toBe(2);
     expect(replayResult.duplicateCount).toBe(1);
     expect(replayResult.state.messages.length).toBe(4);
     expect(replayResult.state.duplicatesFiltered).toBe(1);
     expect(replayResult.state.highestSequence).toBe(4);
+    expect(replayResult.state.missedCaughtUpCount).toBe(2);
     expect(replayResult.state.messages.map((m) => m.sequence)).toEqual([1, 2, 3, 4]);
   });
 });

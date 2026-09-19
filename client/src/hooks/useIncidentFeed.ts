@@ -36,6 +36,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
   const isSimulatedOfflineRef = useRef<boolean>(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasConnectedOnceRef = useRef<boolean>(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -97,14 +98,13 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
             case 'REPLAY': {
               // Missed-update recovery (AC3) + deduplication (AC4)
               if (data.roomId === roomId && data.messages.length > 0) {
+                const isReconnection = hasConnectedOnceRef.current;
                 setFeedState((prev) => {
-                  const { state, addedCount } = ingestReplayBatch(prev, data.messages, data.fromSeq);
-                  if (data.fromSeq > 0 && addedCount > 0) {
-                    setErrorNotice(null);
-                  }
+                  const { state } = ingestReplayBatch(prev, data.messages, isReconnection);
                   return state;
                 });
               }
+              hasConnectedOnceRef.current = true;
               break;
             }
 
@@ -132,7 +132,10 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
               break;
             }
 
-            case 'SUBSCRIBED':
+            case 'SUBSCRIBED': {
+              hasConnectedOnceRef.current = true;
+              break;
+            }
             case 'WELCOME':
             default:
               break;
@@ -272,6 +275,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
       setRoomId(newRoomId);
       setFeedState(createInitialFeedStore());
       highestSequenceRef.current = 0;
+      hasConnectedOnceRef.current = false;
     },
     [roomId]
   );

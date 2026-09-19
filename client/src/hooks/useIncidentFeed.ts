@@ -240,11 +240,32 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     }
   }, [wsUrl, clearTimers]);
 
-  // Connect on mount
+  // Connect on mount and register browser online/offline listeners (supports real Wi-Fi toggling)
   useEffect(() => {
     connect();
 
+    const handleOnline = () => {
+      // Real-life Wi-Fi restored: immediately initiate reconnection
+      if (!isSimulatedOfflineRef.current) {
+        setReconnectAttempt(0);
+        setConnectionState('RECONNECTING');
+        connect();
+      }
+    };
+
+    const handleOffline = () => {
+      // Real-life Wi-Fi dropped: transition state
+      if (!isSimulatedOfflineRef.current) {
+        setConnectionState('DISCONNECTED');
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       clearTimers();
       if (socketRef.current) {
         socketRef.current.close();
@@ -253,23 +274,12 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     };
   }, [connect, clearTimers]);
 
-  // Publish a new update (only over active WebSocket channel)
+  // Publish a new update (sends immediately if connected, or queues into outbox if offline)
   const publishUpdate = useCallback(
-    async (content: string, severity: MessageSeverity = 'INFO', author = 'Current User') => {
-      if (!content.trim()) return;
+    async (content: string, severity: MessageSeverity = 'INFO', author = 'Current User'): Promise<{ queued: boolean }> => {
+      if (!content.trim()) return { queued: false };
 
       const currentRoom = roomIdRef.current;
-
-      // Refuse to publish if offline, simulated offline, or socket is not open
-      if (
-        isSimulatedOfflineRef.current ||
-        !socketRef.current ||
-        socketRef.current.readyState !== WebSocket.OPEN
-      ) {
-        setErrorNotice('Cannot broadcast update: Client is disconnected. Please reconnect first.');
-        return;
-      }
-
       const clientMessageId = crypto.randomUUID();
       const payload: ClientMessage = {
         type: 'PUBLISH',
@@ -280,14 +290,26 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
         clientMessageId,
       };
 
-      // Add to unacknowledged outbox queue until confirmed via BROADCAST or REPLAY
+      // Always track in unacknowledged outbox queue until confirmed via BROADCAST or REPLAY
       outboxRef.current.set(clientMessageId, payload);
       setPendingOutboxCount(outboxRef.current.size);
 
-      try {
-        socketRef.current.send(JSON.stringify(payload));
-      } catch (err: any) {
-        console.warn('[FeedHook] Immediate send error; retained in outbox for retry:', err);
+      const isConnected =
+        !isSimulatedOfflineRef.current &&
+        socketRef.current &&
+        socketRef.current.readyState === WebSocket.OPEN;
+
+      if (isConnected && socketRef.current) {
+        try {
+          socketRef.current.send(JSON.stringify(payload));
+          return { queued: false };
+        } catch (err: any) {
+          console.warn('[FeedHook] Immediate send error; retained in outbox for automatic retry:', err);
+          return { queued: true };
+        }
+      } else {
+        // Offline: successfully queued into outbox for automatic delivery upon reconnection
+        return { queued: true };
       }
     },
     []

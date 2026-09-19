@@ -87,16 +87,15 @@ export default function App() {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (connectionState !== 'CONNECTED' || isSimulatedOffline) {
-      setToastMessage('Cannot broadcast: Connection is offline. Click Reconnect & Sync (AC3) to restore connection first.');
-      return;
-    }
     if (!inputContent.trim() || isSending) return;
 
     setIsSending(true);
     try {
-      await publishUpdate(inputContent, selectedSeverity, selectedAuthor);
+      const result = await publishUpdate(inputContent, selectedSeverity, selectedAuthor);
       setInputContent('');
+      if (result && result.queued) {
+        setToastMessage('Update queued in Outbox! Will broadcast automatically when Wi-Fi / connection is restored.');
+      }
     } finally {
       setIsSending(false);
     }
@@ -463,16 +462,11 @@ export default function App() {
               <button
                 key={idx}
                 type="button"
-                disabled={connectionState !== 'CONNECTED'}
                 onClick={() => {
                   setInputContent(preset.text);
                   setSelectedSeverity(preset.severity);
                 }}
-                className={`shrink-0 text-[11px] px-2 py-1 rounded border transition-all flex items-center gap-1.5 ${
-                  connectionState !== 'CONNECTED'
-                    ? 'bg-slate-900/40 text-slate-600 border-slate-900 cursor-not-allowed'
-                    : 'bg-slate-900 hover:bg-slate-800 border-slate-800 hover:border-indigo-600/50 text-slate-300 hover:text-white'
-                }`}
+                className="shrink-0 text-[11px] px-2 py-1 rounded border transition-all flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border-slate-800 hover:border-indigo-600/50 text-slate-300 hover:text-white"
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
@@ -494,11 +488,8 @@ export default function App() {
             <div className="flex items-center gap-1 shrink-0">
               <select
                 value={selectedAuthor}
-                disabled={connectionState !== 'CONNECTED'}
                 onChange={(e) => setSelectedAuthor(e.target.value)}
-                className={`bg-slate-900 border rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 ${
-                  connectionState !== 'CONNECTED' ? 'border-slate-900 text-slate-500 cursor-not-allowed' : 'border-slate-800'
-                }`}
+                className="bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
               >
                 {AUTHORS.map((a) => (
                   <option key={a} value={a}>
@@ -514,12 +505,9 @@ export default function App() {
                 <button
                   type="button"
                   key={sev}
-                  disabled={connectionState !== 'CONNECTED'}
                   onClick={() => setSelectedSeverity(sev)}
                   className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
-                    connectionState !== 'CONNECTED'
-                      ? 'bg-slate-900/40 text-slate-600 border border-slate-900 cursor-not-allowed'
-                      : selectedSeverity === sev
+                    selectedSeverity === sev
                       ? sev === 'CRITICAL'
                         ? 'bg-rose-600 text-white shadow-sm'
                         : sev === 'WARNING'
@@ -540,30 +528,32 @@ export default function App() {
                 value={inputContent}
                 onChange={(e) => setInputContent(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={connectionState !== 'CONNECTED' || isSending}
+                disabled={isSending}
                 placeholder={
                   connectionState === 'CONNECTED'
-                    ? `Post update to ${roomId}... (Enter to send)`
-                    : `Feed is offline — Reconnect to broadcast updates`
+                    ? `Post update to ${roomId}... (Enter to broadcast)`
+                    : `Post update to ${roomId}... (Queues in Outbox until online)`
                 }
-                className={`flex-1 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none transition-all font-sans ${
-                  connectionState !== 'CONNECTED'
-                    ? 'bg-slate-950/50 border border-slate-900 text-slate-500 cursor-not-allowed'
-                    : 'bg-slate-950 border border-slate-800 focus:border-indigo-500'
-                }`}
+                className="flex-1 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none transition-all font-sans bg-slate-950 border border-slate-800 focus:border-indigo-500"
               />
               <button
                 type="submit"
-                disabled={connectionState !== 'CONNECTED' || !inputContent.trim() || isSending}
-                title={connectionState !== 'CONNECTED' ? 'Cannot broadcast while disconnected' : 'Broadcast update'}
+                disabled={!inputContent.trim() || isSending}
+                title={
+                  connectionState === 'CONNECTED'
+                    ? 'Broadcast update to all participants'
+                    : 'Queue update in Outbox (broadcasts automatically on reconnect)'
+                }
                 className={`px-3.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0 ${
-                  connectionState !== 'CONNECTED' || !inputContent.trim() || isSending
+                  !inputContent.trim() || isSending
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/40'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-95 shadow-md shadow-indigo-600/20'
+                    : connectionState === 'CONNECTED'
+                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-95 shadow-md shadow-indigo-600/20'
+                    : 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95 shadow-md shadow-amber-600/20'
                 }`}
               >
                 <Send className="h-3 w-3" />
-                <span>Broadcast</span>
+                <span>{connectionState === 'CONNECTED' ? 'Broadcast' : 'Queue Broadcast'}</span>
               </button>
             </div>
           </form>

@@ -2,7 +2,7 @@
 
 ## Candidate
 
-- **Name:** Prabhat
+- **Name:** Prabhat Ranjan Singh
 - **Email:** topi9864@gmail.com
 - **GitHub:** https://github.com/prabhattopi (or fork URL: `https://github.com/prabhattopi/product-engineer-ps`)
 - **Selected problem:** Problem 3: Reconnecting Real-Time Feed (`problems/03-reconnecting-realtime-feed`)

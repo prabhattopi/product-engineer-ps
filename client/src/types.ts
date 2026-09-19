@@ -17,7 +17,8 @@ export interface FeedStats {
   totalReceived: number;
   duplicatesFiltered: number;
   reconnectAttempts: number;
-  lastReplayCount: number;
+  missedCaughtUpCount: number;
+  initialHistoryCount: number;
   lastConnectedAt?: string;
   lastDisconnectedAt?: string;
 }

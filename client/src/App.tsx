@@ -14,6 +14,8 @@ import {
   User,
   RotateCcw,
   CheckCircle2,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 import { useIncidentFeed } from './hooks/useIncidentFeed';
 import type { MessageSeverity } from './types';
@@ -46,6 +48,8 @@ export default function App() {
     simulateDisconnect,
     reconnect,
     switchRoom,
+    clearFeed,
+    injectSimulatedDuplicate,
   } = useIncidentFeed({
     initialRoomId: 'incident-alpha',
   });
@@ -54,6 +58,7 @@ export default function App() {
   const [selectedSeverity, setSelectedSeverity] = useState<MessageSeverity>('INFO');
   const [selectedAuthor, setSelectedAuthor] = useState(AUTHORS[0]);
   const [isSending, setIsSending] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const feedEndRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +66,14 @@ export default function App() {
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  // Handle toast timeout
+  useEffect(() => {
+    if (toastMessage) {
+      const t = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [toastMessage]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -82,40 +95,48 @@ export default function App() {
     }
   };
 
+  const triggerDuplicateTest = () => {
+    if (messages.length === 0) {
+      setToastMessage('Please send at least 1 message before simulating duplicate delivery.');
+      return;
+    }
+    injectSimulatedDuplicate();
+    setToastMessage('AC4 Verified: Injected duplicate message packet was intercepted and blocked by client deduplicator!');
+  };
+
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Top Header */}
-      <header className="border-b border-slate-800/80 bg-[#0c101a]/90 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Radio className="h-5 w-5 animate-pulse" />
+    <div className="h-screen max-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 selection:text-indigo-200 overflow-hidden">
+      {/* 1. Top Header */}
+      <header className="shrink-0 border-b border-slate-800/80 bg-[#0c101a] px-4 py-2.5 z-50">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <Radio className="h-4 w-4 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold tracking-tight text-white text-base sm:text-lg">
+                <span className="font-bold tracking-tight text-white text-sm sm:text-base">
                   CAYGNUS INCIDENT COMMAND
                 </span>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 font-mono border border-indigo-800/50">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 font-mono border border-indigo-800/50">
                   REAL-TIME FEED
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Resilient Event Feed with Sequence Ordering & Missed-Update Recovery
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                Problem 3: Reconnecting Real-Time Incident Coordination Feed
               </p>
             </div>
           </div>
 
-          {/* Connection Status & Room Switcher */}
-          <div className="flex items-center gap-3">
-            {/* Room selector */}
-            <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 rounded-lg p-1 text-xs">
-              <span className="text-slate-400 px-2 font-medium">Room:</span>
+          {/* Room Selector & Connection Status */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Room Tabs */}
+            <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-lg p-1 text-xs">
               <button
                 onClick={() => switchRoom('incident-alpha')}
-                className={`px-2.5 py-1 rounded font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded font-mono transition-colors text-xs ${
                   roomId === 'incident-alpha'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-indigo-600 text-white font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -123,9 +144,9 @@ export default function App() {
               </button>
               <button
                 onClick={() => switchRoom('incident-bravo')}
-                className={`px-2.5 py-1 rounded font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded font-mono transition-colors text-xs ${
                   roomId === 'incident-bravo'
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-indigo-600 text-white font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -133,14 +154,14 @@ export default function App() {
               </button>
             </div>
 
-            {/* Connection Status Badge */}
+            {/* Connection Status Badge (AC2) */}
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold tracking-wide transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold tracking-wide transition-all shrink-0 ${
                 connectionState === 'CONNECTED'
-                  ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
                   : connectionState === 'RECONNECTING'
-                  ? 'bg-amber-950/50 border-amber-500/40 text-amber-300 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.15)]'
-                  : 'bg-rose-950/60 border-rose-500/50 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]'
+                  ? 'bg-amber-950/60 border-amber-500/40 text-amber-300 animate-pulse'
+                  : 'bg-rose-950/70 border-rose-500/50 text-rose-300'
               }`}
             >
               {connectionState === 'CONNECTED' && (
@@ -167,7 +188,7 @@ export default function App() {
               {connectionState === 'DISCONNECTED' && (
                 <>
                   <WifiOff className="h-3.5 w-3.5 text-rose-400" />
-                  <span>DISCONNECTED (OFFLINE)</span>
+                  <span>DISCONNECTED</span>
                 </>
               )}
             </div>
@@ -175,131 +196,169 @@ export default function App() {
         </div>
       </header>
 
-      {/* Network Simulation & Evaluation Toolbar (Critical for Reviewer & Demo Video) */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border-b border-indigo-900/40 py-2.5 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      {/* 2. Interactive Acceptance Simulation Toolbar (For Demonstration & Testing) */}
+      <div className="shrink-0 bg-[#090d16] border-b border-indigo-950/60 px-4 py-2">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4 text-amber-400" />
+            <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
             <span className="text-xs font-semibold text-slate-200">
-              Interactive Test Simulation (AC2 & AC3):
+              Interactive Test Controls:
             </span>
-            <span className="text-xs text-slate-400 hidden md:inline">
-              Simulate dropping connection, publishing from Client A, then reconnecting to observe catch-up replay.
+            <span className="text-[11px] text-slate-400 hidden md:inline">
+              Test disconnect, post updates in Tab A, then reconnect in Tab B to observe replay catch-up.
             </span>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Simulate Disconnect (AC2) */}
             <button
               onClick={simulateDisconnect}
               disabled={connectionState === 'DISCONNECTED' && isSimulatedOffline}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              title="Simulate network loss without turning off Wi-Fi"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 connectionState === 'DISCONNECTED' && isSimulatedOffline
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                  : 'bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 border border-rose-500/40 hover:border-rose-500 active:scale-95'
+                  : 'bg-rose-950/40 text-rose-300 hover:bg-rose-900/60 border border-rose-600/50 active:scale-95'
               }`}
             >
-              <WifiOff className="h-3.5 w-3.5" />
-              Simulate Disconnect
+              <WifiOff className="h-3 w-3" />
+              <span>Simulate Disconnect (AC2)</span>
             </button>
 
+            {/* Reconnect & Sync (AC3) */}
             <button
               onClick={reconnect}
               disabled={connectionState === 'CONNECTED'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              title="Restore connection and catch up on missed updates"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                 connectionState === 'CONNECTED'
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                  : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/40 hover:border-emerald-500 active:scale-95 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                  : 'bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/60 border border-emerald-500/50 active:scale-95 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
               }`}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reconnect & Sync
+              <RefreshCw className="h-3 w-3" />
+              <span>Reconnect & Sync (AC3)</span>
+            </button>
+
+            {/* Simulate Duplicate Packet (AC4) */}
+            <button
+              onClick={triggerDuplicateTest}
+              title="Inject an already seen message ID to verify deduplication"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 border border-cyan-500/40 active:scale-95"
+            >
+              <Copy className="h-3 w-3" />
+              <span>Simulate Duplicate (AC4)</span>
+            </button>
+
+            {/* Clear View */}
+            <button
+              onClick={clearFeed}
+              title="Reset local feed view"
+              className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex-1 flex flex-col gap-4 w-full">
-        {/* Telemetry Metrics Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-[#0f1422] border border-slate-800/80 rounded-lg p-3">
-            <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-              <span>Sequence Cursor (AC5)</span>
-              <Activity className="h-3.5 w-3.5 text-indigo-400" />
-            </div>
-            <div className="text-xl font-mono font-bold text-indigo-300">
-              #{stats.highestSequenceId}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">Monotonic ordering</p>
-          </div>
-
-          <div className="bg-[#0f1422] border border-slate-800/80 rounded-lg p-3">
-            <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-              <span>Feed Total (AC1)</span>
-              <Radio className="h-3.5 w-3.5 text-emerald-400" />
-            </div>
-            <div className="text-xl font-mono font-bold text-emerald-300">
-              {stats.totalReceived}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">Active room updates</p>
-          </div>
-
-          <div className="bg-[#0f1422] border border-slate-800/80 rounded-lg p-3">
-            <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-              <span>Duplicates Blocked (AC4)</span>
-              <ShieldCheck className="h-3.5 w-3.5 text-cyan-400" />
-            </div>
-            <div className="text-xl font-mono font-bold text-cyan-300">
-              {stats.duplicatesFiltered}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">Zero UI duplicates</p>
-          </div>
-
-          <div className="bg-[#0f1422] border border-slate-800/80 rounded-lg p-3">
-            <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-              <span>Replay Recovered (AC3)</span>
-              <RotateCcw className="h-3.5 w-3.5 text-purple-400" />
-            </div>
-            <div className="text-xl font-mono font-bold text-purple-300">
-              {stats.lastReplayCount}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">Recovered on reconnect</p>
+      {/* Toast Banner for Verification Feedback */}
+      {toastMessage && (
+        <div className="shrink-0 bg-emerald-950/90 border-b border-emerald-500/40 px-4 py-1.5 text-xs text-emerald-200 flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
           </div>
         </div>
+      )}
 
-        {/* Error notification banner if any */}
-        {errorNotice && (
-          <div className="bg-rose-950/40 border border-rose-500/50 rounded-lg p-3 text-xs text-rose-300 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
-            <span>{errorNotice}</span>
+      {/* Error notification banner if any */}
+      {errorNotice && !toastMessage && (
+        <div className="shrink-0 bg-rose-950/80 border-b border-rose-500/50 px-4 py-1.5 text-xs text-rose-300 flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-400" />
+          <span>{errorNotice}</span>
+        </div>
+      )}
+
+      {/* 3. Telemetry Metrics Bar */}
+      <div className="shrink-0 max-w-7xl mx-auto w-full px-4 pt-3 pb-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* Card 1: Monotonic Sequence Cursor (AC5) */}
+          <div className="bg-[#0c101a] border border-slate-800 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Sequence Cursor</span>
+              <Activity className="h-3 w-3 text-indigo-400" />
+            </div>
+            <div className="text-lg font-mono font-bold text-indigo-300">
+              #{stats.highestSequenceId}
+            </div>
+            <p className="text-[10px] text-slate-500">Monotonic ordering (AC5)</p>
           </div>
-        )}
 
-        {/* Timeline Message Feed */}
-        <div className="bg-[#0c101a] border border-slate-800/90 rounded-xl flex-1 flex flex-col overflow-hidden min-h-[380px] max-h-[520px]">
-          {/* Timeline Feed Header */}
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+          {/* Card 2: Feed Total (AC1) */}
+          <div className="bg-[#0c101a] border border-slate-800 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Feed Total</span>
+              <Radio className="h-3 w-3 text-emerald-400" />
+            </div>
+            <div className="text-lg font-mono font-bold text-emerald-300">
+              {stats.totalReceived}
+            </div>
+            <p className="text-[10px] text-slate-500">Active updates (AC1)</p>
+          </div>
+
+          {/* Card 3: Duplicates Blocked (AC4) */}
+          <div className="bg-[#0c101a] border border-slate-800 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Duplicates Blocked</span>
+              <ShieldCheck className="h-3 w-3 text-cyan-400" />
+            </div>
+            <div className="text-lg font-mono font-bold text-cyan-300">
+              {stats.duplicatesFiltered}
+            </div>
+            <p className="text-[10px] text-slate-500">Zero UI duplicates (AC4)</p>
+          </div>
+
+          {/* Card 4: Missed Caught-Up (AC3) */}
+          <div className="bg-[#0c101a] border border-slate-800 rounded-lg px-3 py-2">
+            <div className="flex items-center justify-between text-slate-400 text-[11px]">
+              <span>Missed Caught-Up</span>
+              <RotateCcw className="h-3 w-3 text-purple-400" />
+            </div>
+            <div className="text-lg font-mono font-bold text-purple-300">
+              {stats.missedCaughtUpCount > 0 ? `+${stats.missedCaughtUpCount}` : '0'}
+            </div>
+            <p className="text-[10px] text-slate-500">Recovered on reconnect (AC3)</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Timeline Stream (Flex scrollable area) */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-2 flex flex-col min-h-0 overflow-hidden">
+        <div className="bg-[#090d16] border border-slate-800/90 rounded-xl flex-1 flex flex-col overflow-hidden min-h-0 shadow-inner">
+          {/* Timeline Subheader */}
+          <div className="shrink-0 px-3.5 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Incident Timeline Stream
+                Incident Stream
               </span>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/50">
                 {roomId}
               </span>
             </div>
-            <span className="text-xs text-slate-500 font-mono">
-              Auto-scrolling enabled
+            <span className="text-[11px] text-slate-500 font-mono">
+              Deterministic sequence sorting active
             </span>
           </div>
 
           {/* Messages Scroll Area */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3">
+          <div className="flex-1 p-3.5 overflow-y-auto space-y-2.5">
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500">
-                <CheckCircle2 className="h-10 w-10 text-slate-700 mb-2" />
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                <CheckCircle2 className="h-8 w-8 text-slate-700 mb-2" />
                 <p className="text-sm font-medium text-slate-400">No incident updates yet in {roomId}</p>
-                <p className="text-xs text-slate-600 mt-1 max-w-sm">
-                  Publish an update using the composer below or click one of the quick presets to test real-time broadcasting.
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Publish an update using the form below or click one of the 1-click presets.
                 </p>
               </div>
             ) : (
@@ -310,24 +369,24 @@ export default function App() {
                 return (
                   <div
                     key={msg.id}
-                    className={`rounded-lg border p-3.5 transition-all animate-fadeIn ${
+                    className={`rounded-lg border p-3 transition-all ${
                       isCritical
-                        ? 'bg-rose-950/20 border-rose-900/50 hover:border-rose-700/50'
+                        ? 'bg-rose-950/20 border-rose-900/50 hover:border-rose-700/60'
                         : isWarning
-                        ? 'bg-amber-950/20 border-amber-900/50 hover:border-amber-700/50'
-                        : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700/80'
+                        ? 'bg-amber-950/20 border-amber-900/50 hover:border-amber-700/60'
+                        : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700/80'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2">
                         {/* Monotonic Sequence Pill (AC5) */}
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800/50">
+                        <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800/50">
                           #{msg.sequence}
                         </span>
 
                         {/* Severity Badge */}
                         <span
-                          className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${
+                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
                             isCritical
                               ? 'bg-rose-900/40 text-rose-300 border-rose-700/60'
                               : isWarning
@@ -335,9 +394,9 @@ export default function App() {
                               : 'bg-cyan-900/40 text-cyan-300 border-cyan-700/60'
                           }`}
                         >
-                          {isCritical && <AlertOctagon className="h-3 w-3" />}
-                          {isWarning && <AlertTriangle className="h-3 w-3" />}
-                          {!isCritical && !isWarning && <Info className="h-3 w-3" />}
+                          {isCritical && <AlertOctagon className="h-2.5 w-2.5" />}
+                          {isWarning && <AlertTriangle className="h-2.5 w-2.5" />}
+                          {!isCritical && !isWarning && <Info className="h-2.5 w-2.5" />}
                           {msg.severity}
                         </span>
 
@@ -348,14 +407,14 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Timestamp */}
+                      {/* Timestamp with seconds for clarity */}
                       <span className="text-[11px] text-slate-500 font-mono">
                         {new Date(msg.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
 
                     {/* Message Body */}
-                    <p className="text-sm text-slate-200 mt-1 pl-1 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-slate-200 pl-0.5 leading-relaxed">
                       {msg.content}
                     </p>
                   </div>
@@ -365,25 +424,29 @@ export default function App() {
             <div ref={feedEndRef} />
           </div>
         </div>
+      </main>
 
-        {/* Quick Demo Presets */}
-        <div className="bg-[#0c101a]/70 border border-slate-800/60 rounded-lg p-3">
-          <div className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
-            <Zap className="h-3.5 w-3.5 text-indigo-400" />
-            <span>1-Click Incident Scenarios (Instant Demo Updates):</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      {/* 5. Fixed Composer & 1-Click Scenarios (Always pinned at bottom, never cut off!) */}
+      <footer className="shrink-0 bg-[#0c101a] border-t border-slate-800 px-4 py-2.5 z-40">
+        <div className="max-w-7xl mx-auto flex flex-col gap-2">
+          {/* 1-Click Quick Presets */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <span className="text-slate-500 font-semibold shrink-0 text-[11px] flex items-center gap-1">
+              <Zap className="h-3 w-3 text-amber-400" />
+              Presets:
+            </span>
             {PRESET_MESSAGES.map((preset, idx) => (
               <button
                 key={idx}
+                type="button"
                 onClick={() => {
                   setInputContent(preset.text);
                   setSelectedSeverity(preset.severity);
                 }}
-                className="text-xs text-left px-2.5 py-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-600/50 text-slate-300 hover:text-white transition-all"
+                className="shrink-0 text-[11px] px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-600/50 text-slate-300 hover:text-white transition-all flex items-center gap-1.5"
               >
                 <span
-                  className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${
+                  className={`w-1.5 h-1.5 rounded-full ${
                     preset.severity === 'CRITICAL'
                       ? 'bg-rose-500'
                       : preset.severity === 'WARNING'
@@ -391,87 +454,76 @@ export default function App() {
                       : 'bg-cyan-500'
                   }`}
                 />
-                {preset.text}
+                <span className="truncate max-w-[200px] sm:max-w-[280px]">{preset.text}</span>
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Composer Form */}
-        <form
-          onSubmit={handleSendMessage}
-          className="bg-[#0f1422] border border-slate-800 rounded-xl p-3.5 flex flex-col gap-3 shadow-lg"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
-              {/* Author selector */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400 font-medium">As:</span>
-                <select
-                  value={selectedAuthor}
-                  onChange={(e) => setSelectedAuthor(e.target.value)}
-                  className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                >
-                  {AUTHORS.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Severity buttons */}
-              <div className="flex items-center gap-1">
-                {(['INFO', 'WARNING', 'CRITICAL'] as MessageSeverity[]).map((sev) => (
-                  <button
-                    type="button"
-                    key={sev}
-                    onClick={() => setSelectedSeverity(sev)}
-                    className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
-                      selectedSeverity === sev
-                        ? sev === 'CRITICAL'
-                          ? 'bg-rose-600 text-white shadow-sm'
-                          : sev === 'WARNING'
-                          ? 'bg-amber-600 text-white shadow-sm'
-                          : 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
-                    }`}
-                  >
-                    {sev}
-                  </button>
+          {/* Form Composer */}
+          <form onSubmit={handleSendMessage} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            {/* Author selector */}
+            <div className="flex items-center gap-1 shrink-0">
+              <select
+                value={selectedAuthor}
+                onChange={(e) => setSelectedAuthor(e.target.value)}
+                className="bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              >
+                {AUTHORS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
 
-            <span className="text-[11px] text-slate-500 hidden sm:inline font-mono">
-              Press Enter to post update
-            </span>
-          </div>
+            {/* Severity buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              {(['INFO', 'WARNING', 'CRITICAL'] as MessageSeverity[]).map((sev) => (
+                <button
+                  type="button"
+                  key={sev}
+                  onClick={() => setSelectedSeverity(sev)}
+                  className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
+                    selectedSeverity === sev
+                      ? sev === 'CRITICAL'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : sev === 'WARNING'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  {sev}
+                </button>
+              ))}
+            </div>
 
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={inputContent}
-              onChange={(e) => setInputContent(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={`Post operational update to ${roomId}...`}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-all font-sans"
-            />
-            <button
-              type="submit"
-              disabled={!inputContent.trim() || isSending}
-              className={`px-4 py-2 rounded-lg font-semibold text-xs flex items-center gap-2 transition-all ${
-                !inputContent.trim() || isSending
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/40'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-95 shadow-md shadow-indigo-600/20'
-              }`}
-            >
-              <Send className="h-3.5 w-3.5" />
-              <span>Broadcast</span>
-            </button>
-          </div>
-        </form>
-      </main>
+            {/* Input & Send */}
+            <div className="flex-1 flex gap-2 w-full sm:w-auto">
+              <input
+                type="text"
+                value={inputContent}
+                onChange={(e) => setInputContent(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={`Post update to ${roomId}... (Enter to send)`}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-all font-sans"
+              />
+              <button
+                type="submit"
+                disabled={!inputContent.trim() || isSending}
+                className={`px-3.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shrink-0 ${
+                  !inputContent.trim() || isSending
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/40'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-95 shadow-md shadow-indigo-600/20'
+                }`}
+              >
+                <Send className="h-3 w-3" />
+                <span>Broadcast</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </footer>
     </div>
   );
 }

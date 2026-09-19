@@ -265,12 +265,37 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     [roomId]
   );
 
+  // Clear local feed
+  const clearFeed = useCallback(() => {
+    setFeedState(createInitialFeedStore());
+    highestSequenceRef.current = 0;
+  }, []);
+
+  // Injects a deliberate duplicate packet to demonstrate and verify AC4
+  const injectSimulatedDuplicate = useCallback(() => {
+    if (feedState.messages.length === 0) {
+      setErrorNotice('Cannot simulate duplicate on empty feed. Post at least one message first.');
+      return;
+    }
+
+    // Pick the latest message and try to ingest it a second time
+    const targetMsg = feedState.messages[feedState.messages.length - 1];
+    setFeedState((prev) => {
+      const { state, isDuplicate } = ingestMessage(prev, targetMsg);
+      if (isDuplicate) {
+        setErrorNotice(`[AC4 Verified] Duplicate packet for message #${targetMsg.sequence} intercepted and dropped!`);
+      }
+      return state;
+    });
+  }, [feedState.messages]);
+
   const stats: FeedStats = {
     highestSequenceId: feedState.highestSequence,
     totalReceived: feedState.messages.length,
     duplicatesFiltered: feedState.duplicatesFiltered,
     reconnectAttempts: reconnectAttempt,
-    lastReplayCount: feedState.lastReplayCount,
+    missedCaughtUpCount: feedState.missedCaughtUpCount,
+    initialHistoryCount: feedState.initialHistoryCount,
   };
 
   return {
@@ -285,5 +310,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     simulateDisconnect,
     reconnect,
     switchRoom,
+    clearFeed,
+    injectSimulatedDuplicate,
   };
 }

@@ -5,7 +5,9 @@ export interface FeedStoreState {
   seenIds: Set<string>;
   highestSequence: number;
   duplicatesFiltered: number;
-  lastReplayCount: number;
+  missedCaughtUpCount: number;
+  initialHistoryCount: number;
+  hasInitialLoaded: boolean;
 }
 
 export function createInitialFeedStore(): FeedStoreState {
@@ -14,7 +16,9 @@ export function createInitialFeedStore(): FeedStoreState {
     seenIds: new Set<string>(),
     highestSequence: 0,
     duplicatesFiltered: 0,
-    lastReplayCount: 0,
+    missedCaughtUpCount: 0,
+    initialHistoryCount: 0,
+    hasInitialLoaded: false,
   };
 }
 
@@ -39,7 +43,7 @@ export function ingestMessage(
   const nextSeenIds = new Set(state.seenIds);
   nextSeenIds.add(message.id);
 
-  // Insert maintaining stable ascending order by sequence
+  // Insert maintaining stable ascending order by sequence (AC5)
   const nextMessages = [...state.messages, message].sort((a, b) => a.sequence - b.sequence);
   const nextHighestSeq = Math.max(state.highestSequence, message.sequence);
 
@@ -56,7 +60,7 @@ export function ingestMessage(
 }
 
 /**
- * Ingests a batch of historical / replay messages with deduplication (AC3, AC4).
+ * Ingests a batch of historical or replay messages with deduplication (AC3, AC4).
  */
 export function ingestReplayBatch(
   state: FeedStoreState,
@@ -82,7 +86,6 @@ export function ingestReplayBatch(
       state: {
         ...state,
         duplicatesFiltered: state.duplicatesFiltered + dupes,
-        lastReplayCount: 0,
       },
       addedCount: 0,
       duplicateCount: dupes,
@@ -92,6 +95,14 @@ export function ingestReplayBatch(
   const combined = [...state.messages, ...toAdd].sort((a, b) => a.sequence - b.sequence);
   const maxSeq = combined.reduce((acc, m) => Math.max(acc, m.sequence), state.highestSequence);
 
+  // If this is the very first batch on startup, count as initial history.
+  // If it is subsequent (after reconnection), count as missed caught-up (AC3)!
+  const isSubsequentReconnect = state.hasInitialLoaded;
+  const newMissedCaughtUp = isSubsequentReconnect
+    ? state.missedCaughtUpCount + added
+    : state.missedCaughtUpCount;
+  const newInitialHistory = !isSubsequentReconnect ? added : state.initialHistoryCount;
+
   return {
     state: {
       ...state,
@@ -99,7 +110,9 @@ export function ingestReplayBatch(
       seenIds: nextSeenIds,
       highestSequence: maxSeq,
       duplicatesFiltered: state.duplicatesFiltered + dupes,
-      lastReplayCount: added,
+      missedCaughtUpCount: newMissedCaughtUp,
+      initialHistoryCount: newInitialHistory,
+      hasInitialLoaded: true,
     },
     addedCount: added,
     duplicateCount: dupes,

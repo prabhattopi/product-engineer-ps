@@ -68,5 +68,14 @@ export function createRoutes(store: MessageStore, wsHandler: WebSocketHandler): 
     });
   });
 
+  // Reset room (Clears store on disk and broadcasts ROOM_RESET to all connected tabs)
+  router.post('/rooms/:roomId/reset', (req: Request, res: Response) => {
+    const roomId = getParam(req.params.roomId);
+    store.clearRoom(roomId);
+    wsHandler.broadcastRoomReset(roomId);
+    res.json({ status: 'ok', roomId, message: 'Room sequence and history reset to 0' });
+  });
+
   return router;
 }
+

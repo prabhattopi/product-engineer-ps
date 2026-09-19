@@ -137,6 +137,13 @@ export class MessageStore {
     return this.messagesByRoom.get(roomId) || [];
   }
 
+  public clearRoom(roomId: string): void {
+    this.sequences.delete(roomId);
+    this.messagesByRoom.delete(roomId);
+    this.clientMsgDedupe.delete(roomId);
+    this.flushToDisk();
+  }
+
   public clearAll(): void {
     this.sequences.clear();
     this.messagesByRoom.clear();

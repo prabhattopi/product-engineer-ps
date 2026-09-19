@@ -73,4 +73,9 @@ export type ServerMessage =
       type: 'ERROR';
       message: string;
       code?: string;
+    }
+  | {
+      type: 'ROOM_RESET';
+      roomId: string;
     };
+

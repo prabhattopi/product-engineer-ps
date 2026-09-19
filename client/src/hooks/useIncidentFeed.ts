@@ -98,9 +98,20 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
               // Missed-update recovery (AC3) + deduplication (AC4)
               if (data.roomId === roomId && data.messages.length > 0) {
                 setFeedState((prev) => {
-                  const { state } = ingestReplayBatch(prev, data.messages);
+                  const { state, addedCount } = ingestReplayBatch(prev, data.messages, data.fromSeq);
+                  if (data.fromSeq > 0 && addedCount > 0) {
+                    setErrorNotice(null);
+                  }
                   return state;
                 });
+              }
+              break;
+            }
+
+            case 'ROOM_RESET': {
+              if (data.roomId === roomId) {
+                setFeedState(createInitialFeedStore());
+                highestSequenceRef.current = 0;
               }
               break;
             }
@@ -265,7 +276,21 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     [roomId]
   );
 
-  // Clear local feed
+  // Reset room on server (broadcasts ROOM_RESET to all connected tabs)
+  const resetRoomOnServer = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiUrl}/rooms/${roomId}/reset`, { method: 'POST' });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setFeedState(createInitialFeedStore());
+      highestSequenceRef.current = 0;
+    } catch (err: any) {
+      setErrorNotice(`Failed to reset room: ${err.message}`);
+    }
+  }, [apiUrl, roomId]);
+
+  // Clear local feed view only
   const clearFeed = useCallback(() => {
     setFeedState(createInitialFeedStore());
     highestSequenceRef.current = 0;
@@ -311,6 +336,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     reconnect,
     switchRoom,
     clearFeed,
+    resetRoomOnServer,
     injectSimulatedDuplicate,
   };
 }

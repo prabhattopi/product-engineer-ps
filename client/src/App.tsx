@@ -48,7 +48,7 @@ export default function App() {
     simulateDisconnect,
     reconnect,
     switchRoom,
-    clearFeed,
+    resetRoomOnServer,
     injectSimulatedDuplicate,
   } = useIncidentFeed({
     initialRoomId: 'incident-alpha',
@@ -74,6 +74,16 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [toastMessage]);
+
+  // When missed updates are caught up on reconnect (AC3), notify user with feedback banner
+  const prevMissedRef = useRef(stats.missedCaughtUpCount);
+  useEffect(() => {
+    if (stats.missedCaughtUpCount > prevMissedRef.current) {
+      const recovered = stats.missedCaughtUpCount - prevMissedRef.current;
+      setToastMessage(`AC3 Verified: Recovered ${recovered} missed update${recovered > 1 ? 's' : ''} via sequence replay!`);
+    }
+    prevMissedRef.current = stats.missedCaughtUpCount;
+  }, [stats.missedCaughtUpCount]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -250,13 +260,17 @@ export default function App() {
               <span>Simulate Duplicate (AC4)</span>
             </button>
 
-            {/* Clear View */}
+            {/* Reset Room on Server (Broadcasts to all tabs so both tabs reset cleanly to sequence 0) */}
             <button
-              onClick={clearFeed}
-              title="Reset local feed view"
-              className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+              onClick={async () => {
+                await resetRoomOnServer();
+                setToastMessage('Incident room reset to sequence #0 across all tabs!');
+              }}
+              title="Reset room on server (resets sequence to 0 and clears all tabs)"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-900/50 transition-all"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
+              <span>Reset Room</span>
             </button>
           </div>
         </div>

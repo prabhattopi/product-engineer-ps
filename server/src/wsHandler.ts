@@ -200,6 +200,22 @@ export class WebSocketHandler {
     }
   }
 
+  public broadcastRoomReset(roomId: string): void {
+    const payload: ServerMessage = {
+      type: 'ROOM_RESET',
+      roomId,
+    };
+
+    for (const session of this.clients.values()) {
+      if (
+        session.roomId === roomId &&
+        session.ws.readyState === WebSocket.OPEN
+      ) {
+        this.send(session.ws, payload);
+      }
+    }
+  }
+
   private send(ws: WebSocket, message: ServerMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));

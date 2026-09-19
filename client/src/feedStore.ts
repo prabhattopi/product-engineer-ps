@@ -61,10 +61,13 @@ export function ingestMessage(
 
 /**
  * Ingests a batch of historical or replay messages with deduplication (AC3, AC4).
+ * fromSeq indicates the cursor from which the replay was requested. If fromSeq > 0,
+ * it represents a missed-update catch-up after a disconnection.
  */
 export function ingestReplayBatch(
   state: FeedStoreState,
-  replayedMessages: IncidentMessage[]
+  replayedMessages: IncidentMessage[],
+  fromSeq = 0
 ): { state: FeedStoreState; addedCount: number; duplicateCount: number } {
   let dupes = 0;
   let added = 0;
@@ -95,13 +98,15 @@ export function ingestReplayBatch(
   const combined = [...state.messages, ...toAdd].sort((a, b) => a.sequence - b.sequence);
   const maxSeq = combined.reduce((acc, m) => Math.max(acc, m.sequence), state.highestSequence);
 
-  // If this is the very first batch on startup, count as initial history.
-  // If it is subsequent (after reconnection), count as missed caught-up (AC3)!
-  const isSubsequentReconnect = state.hasInitialLoaded;
-  const newMissedCaughtUp = isSubsequentReconnect
+  // If fromSeq > 0, this batch was explicitly requested during reconnection after sequence fromSeq!
+  // Therefore, all newly added messages are missed updates (AC3)!
+  const isMissedReconnection = fromSeq > 0;
+  const newMissedCaughtUp = isMissedReconnection
     ? state.missedCaughtUpCount + added
     : state.missedCaughtUpCount;
-  const newInitialHistory = !isSubsequentReconnect ? added : state.initialHistoryCount;
+  const newInitialHistory = !isMissedReconnection && !state.hasInitialLoaded
+    ? added
+    : state.initialHistoryCount;
 
   return {
     state: {

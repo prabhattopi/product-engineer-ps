@@ -32,6 +32,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
+  const roomIdRef = useRef<string>(roomId);
   const highestSequenceRef = useRef<number>(0);
   const isSimulatedOfflineRef = useRef<boolean>(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,6 +40,10 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
   const hasConnectedOnceRef = useRef<boolean>(false);
 
   // Keep refs in sync
+  useEffect(() => {
+    roomIdRef.current = roomId;
+  }, [roomId]);
+
   useEffect(() => {
     highestSequenceRef.current = feedState.highestSequence;
   }, [feedState.highestSequence]);
@@ -79,7 +84,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
         // Send SUBSCRIBE with current sequence cursor for missed updates recovery (AC3)
         const subscribePayload: ClientMessage = {
           type: 'SUBSCRIBE',
-          roomId,
+          roomId: roomIdRef.current,
           lastSequenceId: highestSequenceRef.current,
         };
         socket.send(JSON.stringify(subscribePayload));
@@ -96,8 +101,8 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
             }
 
             case 'REPLAY': {
-              // Missed-update recovery (AC3) + deduplication (AC4)
-              if (data.roomId === roomId && data.messages.length > 0) {
+              // Only process replay messages for our active room
+              if (data.roomId === roomIdRef.current && data.messages.length > 0) {
                 const isReconnection = hasConnectedOnceRef.current;
                 setFeedState((prev) => {
                   const { state } = ingestReplayBatch(prev, data.messages, isReconnection);
@@ -109,7 +114,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
             }
 
             case 'ROOM_RESET': {
-              if (data.roomId === roomId) {
+              if (data.roomId === roomIdRef.current) {
                 setFeedState(createInitialFeedStore());
                 highestSequenceRef.current = 0;
               }
@@ -118,7 +123,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
 
             case 'BROADCAST': {
               // Live update (AC1) + deduplication (AC4) + monotonic ordering (AC5)
-              if (data.roomId === roomId) {
+              if (data.roomId === roomIdRef.current) {
                 setFeedState((prev) => {
                   const { state } = ingestMessage(prev, data.message);
                   return state;
@@ -141,6 +146,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
               }
               break;
             }
+
             case 'WELCOME':
             default:
               break;
@@ -194,9 +200,9 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     } catch {
       setConnectionState('DISCONNECTED');
     }
-  }, [wsUrl, roomId, clearTimers]);
+  }, [wsUrl, clearTimers]);
 
-  // Connect on mount or roomId change
+  // Connect on mount
   useEffect(() => {
     connect();
 
@@ -214,13 +220,14 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     async (content: string, severity: MessageSeverity = 'INFO', author = 'Current User') => {
       if (!content.trim()) return;
 
+      const currentRoom = roomIdRef.current;
       const clientMessageId = crypto.randomUUID();
 
       // If socket is open, send via WebSocket
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
         const payload: ClientMessage = {
           type: 'PUBLISH',
-          roomId,
+          roomId: currentRoom,
           content: content.trim(),
           author,
           severity,
@@ -230,7 +237,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
       } else {
         // Fallback: send via REST API if disconnected
         try {
-          const res = await fetch(`${apiUrl}/rooms/${roomId}/messages`, {
+          const res = await fetch(`${apiUrl}/rooms/${currentRoom}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -248,7 +255,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
         }
       }
     },
-    [roomId, apiUrl]
+    [apiUrl]
   );
 
   // Simulate network disconnect (for testing and demo video)
@@ -273,22 +280,34 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     connect();
   }, [connect]);
 
-  // Switch Room
+  // Switch Room (seamless in-flight subscription change without tearing down socket!)
   const switchRoom = useCallback(
     (newRoomId: string) => {
-      if (newRoomId === roomId) return;
+      if (newRoomId === roomIdRef.current) return;
       setRoomId(newRoomId);
+      roomIdRef.current = newRoomId;
       setFeedState(createInitialFeedStore());
       highestSequenceRef.current = 0;
-      hasConnectedOnceRef.current = false;
+      hasConnectedOnceRef.current = false; // Fresh room initial load
+
+      // If socket is open, switch subscription immediately
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        const payload: ClientMessage = {
+          type: 'SUBSCRIBE',
+          roomId: newRoomId,
+          lastSequenceId: 0,
+        };
+        socketRef.current.send(JSON.stringify(payload));
+      }
     },
-    [roomId]
+    []
   );
 
   // Reset room on server (broadcasts ROOM_RESET to all connected tabs)
   const resetRoomOnServer = useCallback(async () => {
+    const currentRoom = roomIdRef.current;
     try {
-      const res = await fetch(`${apiUrl}/rooms/${roomId}/reset`, { method: 'POST' });
+      const res = await fetch(`${apiUrl}/rooms/${currentRoom}/reset`, { method: 'POST' });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -297,7 +316,7 @@ export function useIncidentFeed(options: UseIncidentFeedOptions = {}) {
     } catch (err: any) {
       setErrorNotice(`Failed to reset room: ${err.message}`);
     }
-  }, [apiUrl, roomId]);
+  }, [apiUrl]);
 
   // Clear local feed view only
   const clearFeed = useCallback(() => {
